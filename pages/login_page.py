@@ -6,8 +6,7 @@ from src.base_page import BasePage
 
 class LoginPage(BasePage):
     
-    URL = os.environ.get("URL")
-    
+   
     LOC = {
         "username": "//input[@id='user-name']",
         "password": "//input[@id='password']",

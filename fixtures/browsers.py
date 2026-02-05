@@ -28,7 +28,6 @@ def chromium_page(playwright: Playwright):
 def page(chromium_page) -> Page:
     """
     Основная фикстура page для тестов.
-    По умолчанию использует Chromium, но можно легко переключиться на другой браузер.
     """
     return chromium_page
 
