@@ -13,13 +13,13 @@ class BaseElement:
         try:
             self.locator.wait_for(state="visible", timeout=wait_timeout)
         except PlaywrightTimeoutError:
-            allure.attach(body=f"Элемент ['{self.name}'] не появился за {wait_timeout}мс",
+            allure.attach(body=f"Элемент → '{self.name}' не появился за → {wait_timeout} мс",
                           name="Ошибка ожидания",
                           attachment_type=allure.attachment_type.TEXT)
-            raise AssertionError(f"Элемент '{self.name}' не появился за {wait_timeout}мс")
+            raise AssertionError(f"Элемент → '{self.name}' не появился за → {wait_timeout} мс")
 
     def click(self, timeout=None):
-        with allure.step(f'Клик по "{self.name}"'):
+        with allure.step(f'Клик → "{self.name}"'):
             self._wait_for_visible(timeout)
             try:
                 self.locator.click(timeout=timeout if timeout is not None else self.timeout)
@@ -28,7 +28,7 @@ class BaseElement:
                 raise
 
     def fill(self, text, timeout=None):
-        with allure.step(f'Ввод текста в {self.name}'):
+        with allure.step(f'Ввод текста → {self.name}'):
             self._wait_for_visible(timeout)
             try:
                 self.locator.fill(text, timeout=timeout if timeout is not None else self.timeout)
@@ -37,7 +37,7 @@ class BaseElement:
                 raise
 
     def get_text(self, timeout=None):
-        with allure.step(f'Получение текста из {self.name}'):
+        with allure.step(f'Получение текста из → {self.name}'):
             self._wait_for_visible(timeout)
             try:
                 return self.locator.inner_text(timeout=timeout if timeout is not None else self.timeout)
@@ -46,7 +46,7 @@ class BaseElement:
                 raise
 
     def is_visible(self, timeout=None):
-        with allure.step(f'Проверка видимости элемента {self.name}'):
+        with allure.step(f'Проверка видимости элемента → {self.name}'):
             self._wait_for_visible(timeout)
             try:
                 return self.locator.is_visible(timeout=timeout if timeout is not None else self.timeout)
@@ -58,7 +58,7 @@ class BaseElement:
 
     def press_key(self, key, timeout=None):
         """Нажать указанную клавишу (например, 'Enter', 'Escape', 'ArrowDown' и т.д.)"""
-        with allure.step(f'Нажатие клавиши {key} на элементе "{self.name}"'):
+        with allure.step(f'Нажатие клавиши → {key} на элементе → "{self.name}"'):
             self._wait_for_visible(timeout)
             try:
                 self.locator.press(key, timeout=timeout if timeout is not None else self.timeout)
