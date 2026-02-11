@@ -168,6 +168,68 @@ class ScreenshotComparator:
         if diff_ratio >= threshold:
             raise AssertionError(f"Слишком большая визуальная разница: {diff_ratio:.4f}, порог: {threshold:.4f}")
 
+    # --- Fluent convenience API -------------------------------------------------
+    def __init__(self, base_filename: str | None = None, manager: 'ScreenshotManager' | None = None):
+        """
+        Инициализация для упрощённого (цепочного) использования:
+        Example: ScreenshotComparator("base.png").save_screenshot(page).compare()
+        Можно не передавать `page` в `save_screenshot()` — тогда метод проверит,
+        что файл `new` уже существует.
+        """
+        # Отложенный импорт типа для аннотаций совместимости в рантайме
+        self.manager = manager or ScreenshotManager()
+        self.base_filename = base_filename
+        if base_filename:
+            self.base_path = self.manager.get_path('base', base_filename)
+            self.new_path = self.manager.get_path('new', base_filename)
+            self.result_path = self.manager.get_path('result', base_filename)
+        else:
+            self.base_path = None
+            self.new_path = None
+            self.result_path = None
+
+    def save_screenshot(self, page=None, filename: str | None = None):
+        """
+        Сохраняет (или проверяет наличие) текущего скриншота в `new`.
+
+        Args:
+            page: опционально — объект Playwright `page`; если передан — делается снимок.
+            filename: опционально — имя файла (если нужно переопределить).
+
+        Возвращает `self` для цепочки вызовов.
+        """
+        if filename:
+            self.new_path = self.manager.get_path('new', filename)
+            self.result_path = self.manager.get_path('result', filename)
+            if not self.base_filename:
+                self.base_filename = filename
+                self.base_path = self.manager.get_path('base', filename)
+
+        if page is not None:
+            # Сделать скриншот через менеджер
+            self.manager.capture_page_screenshot(page, self.new_path)
+        else:
+            # Проверяем, что файл уже есть
+            if not self.new_path or not os.path.exists(self.new_path):
+                raise FileNotFoundError(f"Текущий скриншот не найден: {self.new_path}")
+
+        return self
+
+    def compare(self, threshold=None):
+        """
+        Выполняет сравнение между `base` и `new` (и сохраняет результат в `result`).
+        Возвращает значение diff_ratio (float).
+        """
+        if not self.base_path or not self.new_path:
+            raise ValueError("Не указаны пути для сравнения (base/new)")
+        # Используем существующий метод для проверки и сохранения
+        return self.perform_visual_regression_test(
+            baseline_path=self.base_path,
+            current_path=self.new_path,
+            output_path=self.result_path,
+            threshold=threshold,
+        )
+
 
 class ScreenshotManager:
     """
