@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import os
+import allure
 
 
 # --- Простая файловая подсистема вместо класса-менеджера ---------------------
@@ -26,6 +27,93 @@ def get_path(img_type, filename):
 
 def capture_page_screenshot(page, filepath):
     page.screenshot(path=filepath)
+
+
+def attach_images_to_allure(expected_image_path, actual_image_path, diff_image_path, width=800, height=600, attach_files=True):
+    """
+    Прикрепляет к Allure пару изображений для Swipe (имена: 'expected' и 'actual')
+    приводя их заранее к одинаковому размеру (берём размер первого изображения).
+    Дифф прикрепляется отдельно под именем 'diff'. Также добавляются уменьшённые превью.
+    """
+    allure.dynamic.label("testType", "screenshotDiff")
+
+    def _read_img(path):
+        if not path or not os.path.exists(path):
+            return None
+        return cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+    def _encode_png_bytes(img, scale=None, max_w=None, max_h=None):
+        if img is None:
+            return None
+        img_copy = img.copy()
+        # scale (float) — относительное уменьшение, например 0.5 для уменьшения в 2 раза
+        if scale is not None and scale > 0 and scale < 1.0:
+            h, w = img_copy.shape[:2]
+            new_w = max(1, int(w * scale))
+            new_h = max(1, int(h * scale))
+            img_copy = cv2.resize(img_copy, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        elif max_w and max_h:
+            h, w = img_copy.shape[:2]
+            rel = min(max_w / w, max_h / h, 1.0)
+            if rel < 1.0:
+                new_w = max(1, int(w * rel))
+                new_h = max(1, int(h * rel))
+                img_copy = cv2.resize(img_copy, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        success, buf = cv2.imencode('.png', img_copy)
+        if not success:
+            return None
+        return buf.tobytes()
+
+    expected = _read_img(expected_image_path)
+    actual = _read_img(actual_image_path)
+
+    # Приводим оба изображения к размеру первого (expected). Если expected отсутствует — берём actual.
+    if expected is not None:
+        target_h, target_w = expected.shape[:2]
+        expected_resized = expected
+        if actual is not None:
+            if actual.shape[:2] != (target_h, target_w):
+                actual_resized = cv2.resize(actual, (target_w, target_h), interpolation=cv2.INTER_AREA)
+            else:
+                actual_resized = actual
+        else:
+            actual_resized = None
+    elif actual is not None:
+        target_h, target_w = actual.shape[:2]
+        expected_resized = actual.copy()
+        actual_resized = actual
+    else:
+        target_h = target_w = None
+        expected_resized = actual_resized = None
+
+    # Прикрепляем только требуемые файлы под именами 'expected', 'actual', 'diff'
+    if attach_files:
+        try:
+            exp_bytes = _encode_png_bytes(expected_resized, scale=0.5)
+            if exp_bytes:
+                allure.attach(exp_bytes, name="expected", attachment_type=allure.attachment_type.PNG)
+        except Exception:
+            pass
+        try:
+            act_bytes = _encode_png_bytes(actual_resized, scale=0.5)
+            if act_bytes:
+                allure.attach(act_bytes, name="actual", attachment_type=allure.attachment_type.PNG)
+        except Exception:
+            pass
+
+        # Дифф прикрепляем отдельно под именем 'diff' и также уменьшаем в 2 раза
+        if diff_image_path and os.path.exists(diff_image_path):
+            try:
+                diff_img = _read_img(diff_image_path)
+                diff_bytes = _encode_png_bytes(diff_img, scale=0.5)
+                if diff_bytes:
+                    allure.attach(diff_bytes, name="diff", attachment_type=allure.attachment_type.PNG)
+                else:
+                    allure.attach.file(diff_image_path, name="diff", attachment_type=allure.attachment_type.PNG)
+            except Exception:
+                pass
+
+    # Больше дополнительных превью не прикрепляем — оставляем только 'expected','actual','diff'
 
 
 class ScreenshotComparator:
@@ -190,7 +278,6 @@ class ScreenshotComparator:
         if diff_ratio >= threshold:
             raise AssertionError(f"Слишком большая визуальная разница: {diff_ratio:.4f}, порог: {threshold:.4f}")
 
-    # --- Fluent convenience API -------------------------------------------------
     def __init__(self, base_filename: str | None = None):
         """
         Инициализация для упрощённого (цепочного) использования:
@@ -235,17 +322,43 @@ class ScreenshotComparator:
 
         return self
 
-    def compare(self, threshold=None):
+    def compare(self, threshold=None, raise_on_threshold=False):
         """
         Выполняет сравнение между `base` и `new` (и сохраняет результат в `result`).
-        Возвращает значение diff_ratio (float).
+        По умолчанию может бросать AssertionError при превышении порога.
+        Возвращает `self` для цепочки вызовов; последний вычисленный diff хранится в `self.last_diff`.
         """
         if not self.base_path or not self.new_path:
             raise ValueError("Не указаны пути для сравнения (base/new)")
-        # Используем существующий метод для проверки и сохранения
-        return self.perform_visual_regression_test(
-            baseline_path=self.base_path,
-            current_path=self.new_path,
-            output_path=self.result_path,
-            threshold=threshold,
-        )
+
+        if threshold is None:
+            threshold = self.threshold
+
+        # Получаем diff и изображение с выделениями
+        diff_ratio, highlight = self.compare_images(self.base_path, self.new_path, threshold)
+
+        # Сохраняем результат в результатный путь
+        if self.result_path:
+            cv2.imwrite(self.result_path, highlight)
+
+        # Сохраняем последний diff для доступа
+        self.last_diff = diff_ratio
+
+        # Поведение по умолчанию: не выбрасываем исключение, только сохраняем last_diff.
+        # Если требуется выброс — используйте raise_on_threshold=True.
+        if diff_ratio >= threshold and raise_on_threshold:
+            raise AssertionError(f"Слишком большая визуальная разница: {diff_ratio:.4f}, порог: {threshold:.4f}")
+
+        return self
+
+    def get_diff(self):
+        """Возвращает последний рассчитанный diff_ratio (или None)."""
+        return getattr(self, 'last_diff', None)
+
+    def attach(self, width=800, height=600, attach_files=True):
+        """
+        Прикрепляет `base`, `new` и `result` изображения к Allure-отчёту (миниатюры).
+        Возвращает `self`.
+        """
+        attach_images_to_allure(self.base_path, self.new_path, self.result_path, width=width, height=height, attach_files=attach_files)
+        return self

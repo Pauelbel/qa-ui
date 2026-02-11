@@ -9,4 +9,4 @@ def test_visual(page):
     login_page = LoginPage(page)
     login_page.open()
     
-    ScreenshotComparator("visual.png").save_screenshot(page).compare()
+    ScreenshotComparator("visual.png").save_screenshot(page).compare().attach()
