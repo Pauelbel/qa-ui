@@ -1,7 +1,7 @@
 import pytest
 import allure
 from pages.login_page import LoginPage
-from src.screenshot_testing.screen import ScreenshotComparator, ScreenshotManager
+from src.screenshot_testing.screen import ScreenshotComparator
 
 
 @allure.title('Скриншотный тест')

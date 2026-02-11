@@ -3,6 +3,31 @@ import numpy as np
 import os
 
 
+# --- Простая файловая подсистема вместо класса-менеджера ---------------------
+BASE_DIR = "tests/screenshots_testing"
+BASE_IMG_DIR = os.path.join(BASE_DIR, "base_img")
+NEW_IMG_DIR = os.path.join(BASE_DIR, "new_img")
+RESULT_IMG_DIR = os.path.join(BASE_DIR, "result_img")
+
+for _d in (BASE_IMG_DIR, NEW_IMG_DIR, RESULT_IMG_DIR):
+    os.makedirs(_d, exist_ok=True)
+
+
+def get_path(img_type, filename):
+    if img_type == 'base':
+        return os.path.join(BASE_IMG_DIR, filename)
+    elif img_type == 'new':
+        return os.path.join(NEW_IMG_DIR, filename)
+    elif img_type == 'result':
+        return os.path.join(RESULT_IMG_DIR, filename)
+    else:
+        raise ValueError(f"Неизвестный тип изображения: {img_type}")
+
+
+def capture_page_screenshot(page, filepath):
+    page.screenshot(path=filepath)
+
+
 class ScreenshotComparator:
     # Настройки
     indent = 5              # Отступ вокруг контуров
@@ -115,11 +140,8 @@ class ScreenshotComparator:
         if threshold is None:
             threshold = self.threshold
             
-        # Используем ScreenshotManager для получения путей
-        manager = ScreenshotManager()
-        
         # Получаем путь к эталонному изображению
-        expected_path = manager.get_path('base', expected_filename)
+        expected_path = get_path('base', expected_filename)
         
         # Загружаем эталонное изображение
         expected_img = cv2.imread(expected_path)
@@ -161,7 +183,7 @@ class ScreenshotComparator:
         cv2.addWeighted(overlay, self.fill_alpha, highlight, 1 - self.fill_alpha, 0, highlight)
         
         # Получаем путь для сохранения различий
-        diff_path = manager.get_path('result', diff_filename)
+        diff_path = get_path('result', diff_filename)
         cv2.imwrite(diff_path, highlight)
 
         print(f"Процент визуальной разницы: {diff_ratio*100:.2f}%")
@@ -169,20 +191,18 @@ class ScreenshotComparator:
             raise AssertionError(f"Слишком большая визуальная разница: {diff_ratio:.4f}, порог: {threshold:.4f}")
 
     # --- Fluent convenience API -------------------------------------------------
-    def __init__(self, base_filename: str | None = None, manager: 'ScreenshotManager' | None = None):
+    def __init__(self, base_filename: str | None = None):
         """
         Инициализация для упрощённого (цепочного) использования:
         Example: ScreenshotComparator("base.png").save_screenshot(page).compare()
         Можно не передавать `page` в `save_screenshot()` — тогда метод проверит,
         что файл `new` уже существует.
         """
-        # Отложенный импорт типа для аннотаций совместимости в рантайме
-        self.manager = manager or ScreenshotManager()
         self.base_filename = base_filename
         if base_filename:
-            self.base_path = self.manager.get_path('base', base_filename)
-            self.new_path = self.manager.get_path('new', base_filename)
-            self.result_path = self.manager.get_path('result', base_filename)
+            self.base_path = get_path('base', base_filename)
+            self.new_path = get_path('new', base_filename)
+            self.result_path = get_path('result', base_filename)
         else:
             self.base_path = None
             self.new_path = None
@@ -199,15 +219,15 @@ class ScreenshotComparator:
         Возвращает `self` для цепочки вызовов.
         """
         if filename:
-            self.new_path = self.manager.get_path('new', filename)
-            self.result_path = self.manager.get_path('result', filename)
+            self.new_path = get_path('new', filename)
+            self.result_path = get_path('result', filename)
             if not self.base_filename:
                 self.base_filename = filename
-                self.base_path = self.manager.get_path('base', filename)
+                self.base_path = get_path('base', filename)
 
         if page is not None:
-            # Сделать скриншот через менеджер
-            self.manager.capture_page_screenshot(page, self.new_path)
+            # Сделать скриншот через утилиту
+            capture_page_screenshot(page, self.new_path)
         else:
             # Проверяем, что файл уже есть
             if not self.new_path or not os.path.exists(self.new_path):
@@ -229,54 +249,3 @@ class ScreenshotComparator:
             output_path=self.result_path,
             threshold=threshold,
         )
-
-
-class ScreenshotManager:
-    """
-    Класс для управления файлами и директориями скриншотов
-    """
-    def __init__(self, base_dir="tests/screenshots_testing"):
-        """
-        Инициализация менеджера скриншотов
-        
-        Args:
-            base_dir: базовая директория для хранения скриншотов
-        """
-        self.base_dir = base_dir
-        self.base_img_dir = os.path.join(base_dir, "base_img")
-        self.new_img_dir = os.path.join(base_dir, "new_img")
-        self.result_img_dir = os.path.join(base_dir, "result_img")
-        
-        # Создаем все необходимые директории
-        for directory in [self.base_img_dir, self.new_img_dir, self.result_img_dir]:
-            os.makedirs(directory, exist_ok=True)
-    
-    def get_path(self, img_type, filename):
-        """
-        Получает путь к изображению
-        
-        Args:
-            img_type: тип изображения ('base', 'new', 'result')
-            filename: имя файла
-            
-        Returns:
-            str: полный путь к изображению
-        """
-        if img_type == 'base':
-            return os.path.join(self.base_img_dir, filename)
-        elif img_type == 'new':
-            return os.path.join(self.new_img_dir, filename)
-        elif img_type == 'result':
-            return os.path.join(self.result_img_dir, filename)
-        else:
-            raise ValueError(f"Неизвестный тип изображения: {img_type}")
-
-    def capture_page_screenshot(self, page, filepath):
-        """
-        Делает скриншот страницы с использованием playwright
-        
-        Args:
-            page: объект страницы playwright
-            filepath: путь для сохранения скриншота
-        """
-        page.screenshot(path=filepath)
